@@ -163,7 +163,7 @@ export default function Home() {
       // Process the cards
       const newCards = response.cards.map((card: Card) => ({
         ...card,
-        hasVoted: card.voters?.includes(walletAddress),
+        hasVoted: walletAddress ? card.voters?.includes(walletAddress) : false,
         ticker: card.attributes?.ticker || card.ticker || 'TRAP',
         devFeePercentage: card.attributes?.devFeePercentage || card.devFeePercentage || '10'
       }));
@@ -202,7 +202,7 @@ export default function Home() {
             ? { 
                 ...card, 
                 votes: card.votes + 1,
-                voters: [...(card.voters || []), walletAddress],
+                voters: [...(card.voters || []), ...(walletAddress ? [walletAddress] : [])],
                 hasVoted: true
               } 
             : card
@@ -266,7 +266,7 @@ export default function Home() {
   // Check if user has voted for each card
   const processedCards = sortedCards.map(card => ({
     ...card,
-    hasVoted: card.voters?.includes(walletAddress || ''),
+    hasVoted: walletAddress ? card.voters?.includes(walletAddress) : false,
     // Extract ticker from attributes if available
     ticker: card.attributes?.ticker || card.ticker || 'TRAP',
     // Extract devFeePercentage from attributes if available
