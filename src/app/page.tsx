@@ -2,19 +2,48 @@
 
 import { useAuth } from "../context/AuthContext";
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getCards, voteForCard } from "../lib/api";
 import TrapCard from "../components/TrapCard";
 
+// Define card type for better type safety
+interface Card {
+  _id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  creator: string;
+  votes: number;
+  voters: string[];
+  createdAt: string;
+  attributes?: {
+    ticker?: string;
+    devFeePercentage?: string;
+  };
+  ticker?: string;
+  devFeePercentage?: string;
+  hasVoted?: boolean;
+}
+
 export default function Home() {
-  const { isAuthenticated, isLoading, connectWallet, error, walletAddress } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, walletAddress } = useAuth();
   const [activeTab, setActiveTab] = useState('votes');
   const [searchQuery, setSearchQuery] = useState('');
-  const [cards, setCards] = useState<any[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [voteLoading, setVoteLoading] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMorePages, setHasMorePages] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Auto-retry interval (in milliseconds)
+  const AUTO_RETRY_INTERVAL = 10000; // 10 seconds
+  const MAX_AUTO_RETRIES = 3;
 
   // Format wallet address for display
   const formatWalletAddress = (address: string) => {
@@ -59,31 +88,103 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [calculateTimeRemaining]);
 
+  // Set up auto-retry for failed requests
+  useEffect(() => {
+    let retryTimer: NodeJS.Timeout | null = null;
+    
+    if (apiError && retryCount < MAX_AUTO_RETRIES) {
+      retryTimer = setTimeout(() => {
+        console.log(`Auto-retrying fetch (attempt ${retryCount + 1}/${MAX_AUTO_RETRIES})...`);
+        setRetryCount(prev => prev + 1);
+        fetchCards(true);
+      }, AUTO_RETRY_INTERVAL);
+    }
+    
+    return () => {
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [apiError, retryCount]);
+
   // Fetch cards from the API regardless of authentication status
   useEffect(() => {
-    fetchCards();
+    // Reset pagination when tab changes
+    setCurrentPage(1);
+    setHasMorePages(true);
+    setCards([]);
+    fetchCards(true);
+    
+    // Cleanup function to abort any in-flight requests when tab changes
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
   }, [activeTab]);
 
-  const fetchCards = async () => {
+  const fetchCards = async (reset = false) => {
     try {
-      setLoading(true);
+      // Cancel any previous requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
+      // Create a new abort controller for this request
+      abortControllerRef.current = new AbortController();
+      
+      if (reset) {
+        setLoading(true);
+        setCurrentPage(1);
+      } else {
+        setLoadingMore(true);
+      }
+      
       setApiError(null);
       
       // Determine sort parameter based on active tab
       const sortParam = activeTab === 'votes' ? 'votes' : 'createdAt';
       
+      // Use smaller page size for better performance
+      const pageSize = 10;
+      const pageToFetch = reset ? 1 : currentPage;
+      
       const response = await getCards({
         sort: sortParam,
         order: 'desc',
-        limit: 50
+        limit: pageSize,
+        page: pageToFetch,
+        signal: abortControllerRef.current.signal
       });
       
-      setCards(response.cards);
+      // Update pagination state
+      setCurrentPage(pageToFetch + 1);
+      setHasMorePages(response.pagination.page < response.pagination.pages);
+      
+      // Process the cards
+      const newCards = response.cards.map((card: Card) => ({
+        ...card,
+        hasVoted: card.voters?.includes(walletAddress),
+        ticker: card.attributes?.ticker || card.ticker || 'TRAP',
+        devFeePercentage: card.attributes?.devFeePercentage || card.devFeePercentage || '10'
+      }));
+      
+      // Update cards state (append or replace)
+      setCards(prevCards => reset ? newCards : [...prevCards, ...newCards]);
+      setRetryCount(0); // Reset retry count on success
+      setInitialLoad(false);
     } catch (err: any) {
+      // Don't set error if it was an abort error (user navigated away)
+      if (err.name === 'AbortError') {
+        console.log('Request was aborted');
+        return;
+      }
+      
       console.error('Error fetching cards:', err);
       setApiError(err.message || 'Failed to load cards');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -93,23 +194,41 @@ export default function Home() {
     
     try {
       setVoteLoading(cardId);
-      await voteForCard(cardId);
       
-      // Update the card in the local state
+      // Optimistically update UI
       setCards(prevCards => 
         prevCards.map(card => 
           card._id === cardId 
             ? { 
                 ...card, 
                 votes: card.votes + 1,
-                voters: [...card.voters, walletAddress],
+                voters: [...(card.voters || []), walletAddress],
                 hasVoted: true
               } 
             : card
         )
       );
+      
+      // Make the actual API call
+      await voteForCard(cardId);
     } catch (err: any) {
       console.error('Error voting for card:', err);
+      
+      // Revert the optimistic update on error
+      setCards(prevCards => 
+        prevCards.map(card => 
+          card._id === cardId && card.hasVoted
+            ? { 
+                ...card, 
+                votes: card.votes - 1,
+                voters: (card.voters || []).filter(voter => voter !== walletAddress),
+                hasVoted: false
+              } 
+            : card
+        )
+      );
+      
+      // Show error message
       alert(err.message || 'Failed to vote for card');
     } finally {
       setVoteLoading(null);
@@ -130,7 +249,7 @@ export default function Home() {
     
     return true;
   });
-
+  
   // Sort cards based on active tab
   const sortedCards = [...filteredCards].sort((a, b) => {
     if (activeTab === 'votes') {
@@ -147,7 +266,7 @@ export default function Home() {
   // Check if user has voted for each card
   const processedCards = sortedCards.map(card => ({
     ...card,
-    hasVoted: card.voters?.includes(walletAddress),
+    hasVoted: card.voters?.includes(walletAddress || ''),
     // Extract ticker from attributes if available
     ticker: card.attributes?.ticker || card.ticker || 'TRAP',
     // Extract devFeePercentage from attributes if available
@@ -225,7 +344,7 @@ export default function Home() {
             <h3 className="text-2xl font-bold mb-2">Error Loading Cards</h3>
             <p className="text-red-400 mb-6">{apiError}</p>
             <button 
-              onClick={fetchCards}
+              onClick={() => fetchCards(true)}
               className="bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black px-8 py-3 rounded-md font-bold text-lg inline-block"
             >
               Try Again
@@ -236,80 +355,107 @@ export default function Home() {
         {/* Cards Grid or Empty State */}
         {!loading && !apiError && (
           processedCards.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-              {processedCards.slice(0, 9).map((card) => (
-                <div key={card._id} className="bg-[#121212] rounded-lg overflow-hidden shadow-xl p-4 border border-[#2a2a2a] hover:border-[rgb(134,239,172)] transition-all hover:-translate-y-1">
-                  <div className="flex mb-4">
-                    <div className="mr-4 relative">
-                      <div className="w-16 h-24 overflow-hidden rounded-md shadow-md">
-                        <TrapCard
-                          title={card.title}
-                          imageUrl={card.imageUrl}
-                          ticker={card.ticker}
-                          description=""
-                          devFeePercentage={card.devFeePercentage}
-                          smallPreview={true}
-                        />
+            <div className="max-w-6xl mx-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {processedCards.map((card) => (
+                  <div key={card._id} className="bg-[#121212] rounded-lg overflow-hidden shadow-xl p-4 border border-[#2a2a2a] hover:border-[rgb(134,239,172)] transition-all hover:-translate-y-1">
+                    <div className="flex mb-4">
+                      <div className="mr-4 relative">
+                        <div className="w-16 h-24 overflow-hidden rounded-md shadow-md">
+                          <TrapCard
+                            title={card.title}
+                            imageUrl={card.imageUrl}
+                            ticker={card.ticker}
+                            description=""
+                            devFeePercentage={card.devFeePercentage}
+                            smallPreview={true}
+                          />
+                        </div>
+                        <div className="absolute -top-1 -right-1 bg-red-900 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center shadow-md">
+                          <span className="mr-1">🔥</span>
+                          {card.votes}
+                        </div>
                       </div>
-                      <div className="absolute -top-1 -right-1 bg-red-900 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center shadow-md">
-                        <span className="mr-1">🔥</span>
-                        {card.votes}
+                      <div className="flex flex-col flex-grow">
+                        <h3 className="text-xl font-bold text-[rgb(134,239,172)] truncate">{card.title}</h3>
+                        <div className="text-sm text-gray-400 bg-gray-800 inline-block px-2 py-1 rounded-md mt-1">{card.ticker}</div>
+                        <div className="mt-auto">
+                          <p className="text-xs text-gray-500">Created: {new Date(card.createdAt).toLocaleDateString()}</p>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex flex-col flex-grow">
-                      <h3 className="text-xl font-bold text-[rgb(134,239,172)] truncate">{card.title}</h3>
-                      <div className="text-sm text-gray-400 bg-gray-800 inline-block px-2 py-1 rounded-md mt-1">{card.ticker}</div>
-                      <div className="mt-auto">
-                        <p className="text-xs text-gray-500">Created: {new Date(card.createdAt).toLocaleDateString()}</p>
+                    
+                    <div className="border-t border-gray-700 my-3 pt-2">
+                      <p className="text-sm text-gray-400 line-clamp-2">{card.description}</p>
+                      <div className="flex justify-between mt-2 text-xs text-gray-400">
+                        <span>Creator: {formatWalletAddress(card.creator || '')}</span>
+                        <span>Dev Fee: {card.devFeePercentage}%</span>
                       </div>
+                    </div>
+                    
+                    <div className="flex items-center mt-4">
+                      <button
+                        onClick={() => !card.hasVoted && handleVote(card._id)}
+                        className={`w-full py-2 rounded-md font-bold flex items-center justify-center ${
+                          card.hasVoted 
+                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                            : 'bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black'
+                        }`}
+                        disabled={card.hasVoted || voteLoading === card._id}
+                      >
+                        {voteLoading === card._id ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Voting...
+                          </>
+                        ) : card.hasVoted ? (
+                          <>
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            VOTED
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
+                            </svg>
+                            Vote
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
-                  
-                  <div className="border-t border-gray-700 my-3 pt-2">
-                    <p className="text-sm text-gray-400 line-clamp-2">{card.description}</p>
-                    <div className="flex justify-between mt-2 text-xs text-gray-400">
-                      <span>Creator: {formatWalletAddress(card.creator || '')}</span>
-                      <span>Dev Fee: {card.devFeePercentage}%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center mt-4">
-                    <button
-                      onClick={() => !card.hasVoted && handleVote(card._id)}
-                      className={`w-full py-2 rounded-md font-bold flex items-center justify-center ${
-                        card.hasVoted 
-                          ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                          : 'bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black'
-                      }`}
-                      disabled={card.hasVoted || voteLoading === card._id}
-                    >
-                      {voteLoading === card._id ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Voting...
-                        </>
-                      ) : card.hasVoted ? (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                          </svg>
-                          VOTED
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
-                          </svg>
-                          Vote
-                        </>
-                      )}
-                    </button>
+                ))}
+              </div>
+              
+              {/* Load More Button */}
+              {hasMorePages && !loadingMore && (
+                <div className="text-center mt-8">
+                  <button
+                    onClick={() => fetchCards(false)}
+                    className="bg-[#121212] hover:bg-[#1a1a1a] text-white border border-[#2a2a2a] px-8 py-3 rounded-md font-bold text-lg inline-flex items-center"
+                  >
+                    Load More Cards
+                    <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                  </button>
+                </div>
+              )}
+              
+              {/* Loading More Indicator */}
+              {loadingMore && (
+                <div className="text-center mt-8">
+                  <div className="inline-flex items-center">
+                    <div className="animate-spin mr-3 h-5 w-5 border-t-2 border-b-2 border-[rgb(134,239,172)] rounded-full"></div>
+                    <span className="text-gray-400">Loading more cards...</span>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           ) : (
             <div className="text-center py-16">
