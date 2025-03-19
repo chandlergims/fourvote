@@ -51,16 +51,16 @@ export default function Home() {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
 
-  // Calculate time remaining until 1:00 AM EST
+  // Calculate time remaining until 12:30 AM EST
   const calculateTimeRemaining = useCallback(() => {
     const now = new Date();
     const targetTime = new Date();
     
-    // Set target time to 2:00 AM EST
-    targetTime.setHours(2, 0, 0, 0);
+    // Set target time to 12:30 AM EST
+    targetTime.setHours(0, 30, 0, 0);
     
-    // If it's already past 2:00 AM, set target to next day
-    if (now.getHours() >= 2) {
+    // If it's already past 12:30 AM, set target to next day
+    if (now.getHours() >= 0 && now.getMinutes() >= 30) {
       targetTime.setDate(targetTime.getDate() + 1);
     }
     
