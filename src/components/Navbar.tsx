@@ -38,7 +38,7 @@ const Navbar: React.FC = () => {
               about
             </button>
             <a 
-              href="https://x.com/trapcardsdotfun" 
+              href="https://x.com/pumptrapdotfun" 
               target="_blank" 
               rel="noopener noreferrer" 
               className="text-md font-bold hover:text-[rgb(134,239,172)]"
