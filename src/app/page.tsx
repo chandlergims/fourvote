@@ -2,7 +2,7 @@
 
 import { useAuth } from "../context/AuthContext";
 import Link from "next/link";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { getCards, voteForCard } from "../lib/api";
 import TrapCard from "../components/TrapCard";
 
@@ -25,8 +25,25 @@ interface Card {
   hasVoted?: boolean;
 }
 
+// Client component to handle search params
+import { useSearchParams } from "next/navigation";
+
+function AuthRequiredCheck() {
+  const searchParams = useSearchParams();
+  return searchParams.get('authRequired') === 'true';
+}
+
 export default function Home() {
   const { isAuthenticated, isLoading: authLoading, walletAddress } = useAuth();
+  const [authRequired, setAuthRequired] = useState(false);
+  
+  // Check URL params on client side
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const authRequiredParam = url.searchParams.get('authRequired');
+    setAuthRequired(authRequiredParam === 'true');
+  }, []);
+  
   const [activeTab, setActiveTab] = useState('votes');
   const [searchQuery, setSearchQuery] = useState('');
   const [cards, setCards] = useState<Card[]>([]);
@@ -60,7 +77,7 @@ export default function Home() {
     targetTime.setHours(0, 30, 0, 0);
     
     // If it's already past 12:30 AM, set target to next day
-    if (now.getHours() >= 0 && now.getMinutes() >= 30) {
+    if (now > targetTime) {
       targetTime.setDate(targetTime.getDate() + 1);
     }
     
@@ -111,26 +128,38 @@ export default function Home() {
     setCurrentPage(1);
     setHasMorePages(true);
     setCards([]);
+    
+    // Call fetchCards without a controller
     fetchCards(true);
     
     // Cleanup function to abort any in-flight requests when tab changes
     return () => {
       if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+        try {
+          abortControllerRef.current.abort();
+        } catch (e) {
+          console.error('Error aborting controller:', e);
+        }
         abortControllerRef.current = null;
       }
     };
   }, [activeTab]);
 
   const fetchCards = async (reset = false) => {
-    try {
-      // Cancel any previous requests
-      if (abortControllerRef.current) {
+    // Cancel any previous requests
+    if (abortControllerRef.current) {
+      try {
         abortControllerRef.current.abort();
+      } catch (e) {
+        console.error('Error aborting previous controller:', e);
       }
-      
-      // Create a new abort controller for this request
-      abortControllerRef.current = new AbortController();
+    }
+    
+    // Create a new abort controller for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    
+    try {
       
       if (reset) {
         setLoading(true);
@@ -153,7 +182,7 @@ export default function Home() {
         order: 'desc',
         limit: pageSize,
         page: pageToFetch,
-        signal: abortControllerRef.current.signal
+        signal: controller.signal
       });
       
       // Update pagination state
@@ -184,7 +213,6 @@ export default function Home() {
     } finally {
       setLoading(false);
       setLoadingMore(false);
-      abortControllerRef.current = null;
     }
   };
 
@@ -277,9 +305,19 @@ export default function Home() {
     <div className="min-h-screen bg-[#1b1d28] text-white">
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        {/* Login prompt removed as it's already in the navbar */}
-
-        {/* Header removed as requested */}
+        {/* Authentication Required Message */}
+        {!isAuthenticated && authRequired && (
+          <div className="text-center mb-6">
+            <div className="bg-red-900 border border-red-700 rounded-lg p-4 inline-block">
+              <div className="flex items-center justify-center">
+                <svg className="w-5 h-5 mr-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <span className="text-white font-bold">Must be authenticated to access this feature</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Voting Timer */}
         <div className="text-center mb-6">

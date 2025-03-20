@@ -9,10 +9,10 @@ export default function CreateCard() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
-  // Redirect to home if not authenticated
+  // Redirect to home if not authenticated with a query parameter to show auth message
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push('/');
+      router.push('/?authRequired=true');
     }
   }, [isAuthenticated, isLoading, router]);
 

@@ -28,8 +28,8 @@ const Navbar: React.FC = () => {
       <div className="bg-gray-800 text-white p-4">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
-            <Link href="/" className="flex items-center">
-              <img src="/logo.png" alt="TrapFun Logo" className="h-8 w-auto" />
+            <Link href="/" className="flex items-center text-xl font-bold text-[rgb(134,239,172)]">
+              PumpTrap
             </Link>
             <button 
               onClick={() => setAboutModalOpen(true)} 

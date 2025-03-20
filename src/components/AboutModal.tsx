@@ -20,7 +20,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center p-4 border-b border-[#2a2a2a]">
-          <h2 className="text-2xl font-bold text-[rgb(134,239,172)]">About TrapCard</h2>
+          <h2 className="text-2xl font-bold text-[rgb(134,239,172)]">About PumpTrap</h2>
           <button 
             onClick={onClose}
             className="text-gray-400 hover:text-white"
@@ -35,7 +35,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         <div className="p-6">
           <div className="space-y-4 text-white">
             <p className="text-lg">
-              Welcome to TrapCard - the platform for creating, voting on, and tokenizing trap cards!
+              Welcome to PumpTrap - the platform for creating, voting on, and tokenizing trap cards!
             </p>
             
             <h3 className="text-xl font-bold text-[rgb(134,239,172)] mt-6">How It Works</h3>
