@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import TrapCard from './TrapCard';
+import BNBvoteCard from './BNBvoteCard';
 
 interface CardPreviewProps {
   title: string;
@@ -19,11 +19,11 @@ const CardPreview: React.FC<CardPreviewProps> = ({
   devFeePercentage
 }) => {
   // Create a description from the bio or use a default
-  const description = bio || "Card description goes here. Add details about your trap card.";
+  const description = bio || "Card description goes here. Add details about your BNBvote card.";
   
   return (
     <div className="w-full max-w-[300px] mx-auto">
-      <TrapCard
+      <BNBvoteCard
         title={title}
         imageUrl={imageUrl}
         ticker={ticker}

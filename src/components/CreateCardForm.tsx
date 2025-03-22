@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { createCard } from '../lib/api';
-import TrapCard from './TrapCard';
+import BNBvoteCard from './BNBvoteCard';
 
 interface CreateCardFormProps {
   onSuccess?: () => void;
@@ -19,8 +19,8 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Form state
-  const [name, setName] = useState('My Trap Card');
-  const [ticker, setTicker] = useState('TRAP');
+  const [name, setName] = useState('');
+  const [ticker, setTicker] = useState('');
   const [bio, setBio] = useState('');
   const [devFeePercentage, setDevFeePercentage] = useState('10');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -45,7 +45,7 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
     e.preventDefault();
     
     if (!isAuthenticated) {
-      setError('You must be logged in with your Phantom wallet to create a card');
+      setError('You must be logged in with your MetaMask wallet to create a card');
       return;
     }
 
@@ -126,31 +126,36 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
   };
 
   return (
-    <div className="text-white p-6">
-      <h2 className="text-2xl font-bold mb-6 text-center">Create Trap Card</h2>
+    <div className="text-gray-800 p-6">
+      <h2 className="text-2xl font-bold mb-6 text-center">Create FourVote Card</h2>
 
       {error && (
-        <div className="bg-red-900 text-white p-3 rounded-md mb-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 p-3 rounded-md mb-4">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="bg-green-900 text-white p-3 rounded-md mb-4">
-          {success}
+        <div className="bg-green-50 border border-[rgb(134,239,172)] text-[rgb(134,239,172)] p-4 rounded-md mb-6 flex items-center shadow-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="font-medium">{success}</span>
         </div>
       )}
 
       <div className="flex flex-col md:flex-row gap-8">
         {/* Card Preview */}
         <div className="w-full md:w-1/2 flex justify-center">
-          <TrapCard
-            title={name}
-            imageUrl={previewUrl}
-            ticker={ticker}
-            description={bio || "Enter a bio for your trap card..."}
-            devFeePercentage={devFeePercentage}
-          />
+          <div className="w-full max-w-[350px] h-[350px]">
+            <BNBvoteCard
+              title={name}
+              imageUrl={previewUrl}
+              ticker={ticker}
+              description={bio || ""}
+              devFeePercentage={devFeePercentage}
+            />
+          </div>
         </div>
 
         {/* Form */}
@@ -158,36 +163,42 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Name */}
             <div>
-              <label className="block text-sm font-bold mb-2">Card name:</label>
+              <label className="block text-sm font-bold mb-2">
+                Card name: <span className="text-red-500">* (Required)</span>
+              </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Enter name (max 18 characters)"
+                placeholder="Enter your meme name (max 18 characters)"
                 maxLength={18}
-                className="w-full p-3 bg-gray-800 border border-gray-700 rounded-md text-white"
+                className="w-full p-3 bg-white border border-gray-200 rounded-md text-gray-800 focus:outline-none focus:ring-2 focus:ring-[rgb(134,239,172)]"
                 required
               />
             </div>
 
             {/* Ticker */}
             <div>
-              <label className="block text-sm font-bold mb-2">Ticker:</label>
+              <label className="block text-sm font-bold mb-2">
+                Ticker: <span className="text-red-500">* (Required)</span>
+              </label>
               <input
                 type="text"
                 value={ticker}
                 onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                placeholder="Enter ticker (max 8 characters)"
+                placeholder="Enter token ticker symbol (max 8 characters)"
                 maxLength={8}
-                className="w-full p-3 bg-gray-800 border border-gray-700 rounded-md text-white"
+                className="w-full p-3 bg-white border border-gray-200 rounded-md text-gray-800 focus:outline-none focus:ring-2 focus:ring-[rgb(134,239,172)]"
                 required
               />
-              <p className="text-xs text-gray-400 mt-1">Letters and numbers only, 8 characters max</p>
+              <p className="text-xs text-gray-500 mt-1">Letters and numbers only, 8 characters max</p>
             </div>
 
             {/* Image Upload */}
             <div>
-              <label className="block text-sm font-bold mb-2">Card image: <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-bold mb-2">
+                Card image: <span className="text-red-500">* (Required)</span>
+              </label>
               <div className="flex flex-col space-y-2">
                 <div className="flex items-center">
                   <label className="bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black px-4 py-2 rounded-md cursor-pointer font-bold">
@@ -201,28 +212,30 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
                       required
                     />
                   </label>
-                  <div className="ml-3 px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white overflow-hidden text-ellipsis max-w-xs">
+                  <div className="ml-3 px-3 py-2 bg-white border border-gray-200 rounded-md text-gray-800 overflow-hidden text-ellipsis max-w-xs">
                     {selectedFile ? selectedFile.name : 'No file chosen'}
                   </div>
                 </div>
-                <p className="text-xs text-gray-400">Square image (1:1) recommended</p>
+                <p className="text-xs text-gray-500">Square image (1:1) recommended</p>
               </div>
             </div>
 
             {/* Bio */}
             <div>
-              <label className="block text-sm font-bold mb-2">Bio: <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-bold mb-2">
+                Bio: <span className="text-red-500">* (Required)</span>
+              </label>
               <textarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Enter card bio (max 100 words)"
+                placeholder="Describe your meme and why it should win (max 100 words)"
                 maxLength={500}
                 rows={3}
-                className="w-full p-3 bg-gray-800 border border-gray-700 rounded-md text-white resize-none"
+                className="w-full p-3 bg-white border border-gray-200 rounded-md text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-[rgb(134,239,172)]"
                 required
                 style={{ whiteSpace: 'pre-wrap' }}
               />
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-gray-500 mt-1">
                 {bio ? bio.trim().split(/\s+/).filter(Boolean).length : 0}/100 words
               </p>
             </div>
@@ -239,12 +252,15 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
                 min="0"
                 max="15"
                 step="1"
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[rgb(134,239,172)]"
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[rgb(134,239,172)]"
               />
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>0%</span>
                 <span>15%</span>
               </div>
+              <p className="text-xs text-gray-500 mt-1">
+                This is the percentage of each trade that you'll receive if your meme card wins and gets tokenized.
+              </p>
             </div>
 
             {/* Submit Button */}
@@ -252,9 +268,9 @@ const CreateCardForm: React.FC<CreateCardFormProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black font-bold py-3 px-4 rounded-md transition-colors"
+                className="w-full bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black font-bold py-3 px-4 rounded-md transition-colors cursor-pointer"
               >
-                {isSubmitting ? 'Creating...' : 'Create Trap Card'}
+                {isSubmitting ? 'Creating...' : 'Create FourVote Card'}
               </button>
             </div>
           </form>

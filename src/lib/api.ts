@@ -119,9 +119,10 @@ export async function getCards(options: {
   page?: number;
   sort?: string;
   order?: 'asc' | 'desc';
+  creator?: string;
   signal?: AbortSignal;
 } = {}) {
-  const { limit = 10, page = 1, sort = 'votes', order = 'desc', signal } = options;
+  const { limit = 10, page = 1, sort = 'votes', order = 'desc', creator, signal } = options;
   
   const queryParams = new URLSearchParams({
     limit: limit.toString(),
@@ -131,6 +132,11 @@ export async function getCards(options: {
     // Add cache busting parameter
     _t: Date.now().toString(),
   });
+  
+  // Add creator filter if provided
+  if (creator) {
+    queryParams.append('creator', creator);
+  }
 
   return fetchWithAuth(`/api/cards?${queryParams.toString()}`, {
     // Pass the abort signal if provided

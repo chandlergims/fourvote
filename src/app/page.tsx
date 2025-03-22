@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { getCards, voteForCard } from "../lib/api";
-import TrapCard from "../components/TrapCard";
+import BNBvoteCard from "../components/BNBvoteCard";
 
 // Define card type for better type safety
 interface Card {
@@ -34,14 +34,33 @@ function AuthRequiredCheck() {
 }
 
 export default function Home() {
-  const { isAuthenticated, isLoading: authLoading, walletAddress } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, address } = useAuth();
   const [authRequired, setAuthRequired] = useState(false);
   
-  // Check URL params on client side
+  // Check URL params on client side and handle refresh
   useEffect(() => {
     const url = new URL(window.location.href);
     const authRequiredParam = url.searchParams.get('authRequired');
+    const refreshParam = url.searchParams.get('refresh');
+    const tabParam = url.searchParams.get('tab');
+    
     setAuthRequired(authRequiredParam === 'true');
+    
+    // Set active tab if specified in URL
+    if (tabParam && ['votes', 'creation', 'my'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+    
+    // If redirected from create page with refresh param, reload cards
+    if (refreshParam === 'true') {
+      fetchCards(true);
+      
+      // Remove the refresh and tab parameters from URL without page reload
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('refresh');
+      newUrl.searchParams.delete('tab');
+      window.history.replaceState({}, '', newUrl);
+    }
   }, []);
   
   const [activeTab, setActiveTab] = useState('votes');
@@ -177,13 +196,21 @@ export default function Home() {
       const pageSize = 10;
       const pageToFetch = reset ? 1 : currentPage;
       
-      const response = await getCards({
+      // Create query parameters
+      const queryParams: any = {
         sort: sortParam,
         order: 'desc',
         limit: pageSize,
         page: pageToFetch,
         signal: controller.signal
-      });
+      };
+      
+      // If on "My Cards" tab and user is authenticated, filter by creator
+      if (activeTab === 'my' && isAuthenticated && address) {
+        queryParams.creator = address;
+      }
+      
+      const response = await getCards(queryParams);
       
       // Update pagination state
       setCurrentPage(pageToFetch + 1);
@@ -192,7 +219,7 @@ export default function Home() {
       // Process the cards
       const newCards = response.cards.map((card: Card) => ({
         ...card,
-        hasVoted: walletAddress ? card.voters?.includes(walletAddress) : false,
+        hasVoted: address ? card.voters?.includes(address) : false,
         ticker: card.attributes?.ticker || card.ticker || 'TRAP',
         devFeePercentage: card.attributes?.devFeePercentage || card.devFeePercentage || '10'
       }));
@@ -230,7 +257,7 @@ export default function Home() {
             ? { 
                 ...card, 
                 votes: card.votes + 1,
-                voters: [...(card.voters || []), ...(walletAddress ? [walletAddress] : [])],
+                voters: [...(card.voters || []), ...(address ? [address] : [])],
                 hasVoted: true
               } 
             : card
@@ -249,7 +276,7 @@ export default function Home() {
             ? { 
                 ...card, 
                 votes: card.votes - 1,
-                voters: (card.voters || []).filter(voter => voter !== walletAddress),
+                voters: (card.voters || []).filter(voter => voter !== address),
                 hasVoted: false
               } 
             : card
@@ -271,7 +298,7 @@ export default function Home() {
     }
     
     // Filter by tab
-    if (activeTab === 'my' && card.creator !== walletAddress) {
+    if (activeTab === 'my' && card.creator !== address) {
       return false;
     }
     
@@ -294,7 +321,7 @@ export default function Home() {
   // Check if user has voted for each card
   const processedCards = sortedCards.map(card => ({
     ...card,
-    hasVoted: walletAddress ? card.voters?.includes(walletAddress) : false,
+    hasVoted: address ? card.voters?.includes(address) : false,
     // Extract ticker from attributes if available
     ticker: card.attributes?.ticker || card.ticker || 'TRAP',
     // Extract devFeePercentage from attributes if available
@@ -302,7 +329,7 @@ export default function Home() {
   }));
 
   return (
-    <div className="min-h-screen bg-[#1b1d28] text-white">
+    <div className="min-h-screen bg-white text-gray-800">
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
         {/* Authentication Required Message */}
@@ -321,37 +348,37 @@ export default function Home() {
 
         {/* Voting Timer */}
         <div className="text-center mb-6">
-          <div className="bg-[#121212] border border-[#2a2a2a] rounded-lg p-4 inline-block">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 inline-block shadow-sm">
             <div className="flex items-center justify-center">
               <svg className="w-5 h-5 mr-2 text-[rgb(134,239,172)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
               </svg>
               <span className="text-[rgb(134,239,172)] font-bold">Voting ends in:</span>
-              <span className="ml-2 font-mono text-white bg-gray-800 px-3 py-1 rounded-md">{timeRemaining}</span>
+              <span className="ml-2 font-mono text-gray-800 bg-gray-100 px-3 py-1 rounded-md">{timeRemaining}</span>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex justify-center mb-6">
-          <div className="bg-[#121212] border border-[#2a2a2a] rounded-lg p-1 inline-flex">
+          <div className="bg-white border border-gray-200 rounded-lg p-1 inline-flex shadow-sm">
             <button 
-              className={`px-6 py-2 rounded-md font-bold ${activeTab === 'votes' ? 'bg-[rgb(134,239,172)] text-black' : 'text-[#a0a0a0] hover:text-white'}`}
+              className={`px-6 py-2 rounded-md font-bold ${activeTab === 'votes' ? 'bg-[rgb(134,239,172)] text-black' : 'text-gray-600 hover:text-gray-800'}`}
               onClick={() => setActiveTab('votes')}
             >
               Most Votes
             </button>
             <button 
-              className={`px-6 py-2 rounded-md font-bold ${activeTab === 'creation' ? 'bg-[rgb(134,239,172)] text-black' : 'text-[#a0a0a0] hover:text-white'}`}
+              className={`px-6 py-2 rounded-md font-bold ${activeTab === 'creation' ? 'bg-[rgb(134,239,172)] text-black' : 'text-gray-600 hover:text-gray-800'}`}
               onClick={() => setActiveTab('creation')}
             >
               Creation Time
             </button>
             <button 
-              className={`px-6 py-2 rounded-md font-bold ${activeTab === 'my' ? 'bg-[rgb(134,239,172)] text-black' : 'text-[#a0a0a0] hover:text-white'}`}
+              className={`px-6 py-2 rounded-md font-bold ${activeTab === 'my' ? 'bg-[rgb(134,239,172)] text-black' : 'text-gray-600 hover:text-gray-800'}`}
               onClick={() => setActiveTab('my')}
             >
-              My Trapcards
+              My FourVote Cards
             </button>
           </div>
         </div>
@@ -360,10 +387,10 @@ export default function Home() {
         <div className="max-w-xl mx-auto mb-8">
           <input
             type="text"
-            placeholder="Search trap cards..."
+            placeholder="Search FourVote cards..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#121212] border border-[#2a2a2a] rounded-md py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-[rgb(134,239,172)]"
+            className="w-full bg-white border border-gray-200 rounded-md py-3 px-4 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[rgb(134,239,172)] shadow-sm"
           />
         </div>
 
@@ -371,7 +398,7 @@ export default function Home() {
         {loading && (
           <div className="text-center py-16">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[rgb(134,239,172)] mx-auto mb-4"></div>
-            <p className="text-gray-400">Loading trap cards...</p>
+            <p className="text-gray-400">Loading FourVote cards...</p>
           </div>
         )}
 
@@ -394,56 +421,42 @@ export default function Home() {
         {!loading && !apiError && (
           processedCards.length > 0 ? (
             <div className="max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {processedCards.map((card) => (
-                  <div key={card._id} className="bg-[#121212] rounded-lg overflow-hidden shadow-xl p-4 border border-[#2a2a2a] hover:border-[rgb(134,239,172)] transition-all hover:-translate-y-1">
-                    <div className="flex mb-4">
-                      <div className="mr-4 relative">
-                        <div className="w-16 h-24 overflow-hidden rounded-md shadow-md">
-                          <TrapCard
-                            title={card.title}
-                            imageUrl={card.imageUrl}
-                            ticker={card.ticker}
-                            description=""
-                            devFeePercentage={card.devFeePercentage}
-                            smallPreview={true}
-                          />
-                        </div>
-                        <div className="absolute -top-1 -right-1 bg-red-900 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center shadow-md">
-                          <span className="mr-1">🔥</span>
-                          {card.votes}
-                        </div>
-                      </div>
-                      <div className="flex flex-col flex-grow">
-                        <h3 className="text-xl font-bold text-[rgb(134,239,172)] truncate">{card.title}</h3>
-                        <div className="text-sm text-gray-400 bg-gray-800 inline-block px-2 py-1 rounded-md mt-1">{card.ticker}</div>
-                        <div className="mt-auto">
-                          <p className="text-xs text-gray-500">Created: {new Date(card.createdAt).toLocaleDateString()}</p>
-                        </div>
+                  <div key={card._id} className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all hover:-translate-y-1">
+                    <div className="relative aspect-square">
+                      <BNBvoteCard
+                        title={card.title}
+                        imageUrl={card.imageUrl}
+                        ticker={card.ticker}
+                        description=""
+                        devFeePercentage={card.devFeePercentage}
+                        smallPreview={false}
+                      />
+                      <div className="absolute top-2 left-2 bg-[rgb(134,239,172)] text-black px-2 py-1 rounded-full text-xs font-bold flex items-center">
+                        <span className="mr-1">🔥</span>
+                        {card.votes}
                       </div>
                     </div>
                     
-                    <div className="border-t border-gray-700 my-3 pt-2">
-                      <p className="text-sm text-gray-400 line-clamp-2">{card.description}</p>
-                      <div className="flex justify-between mt-2 text-xs text-gray-400">
-                        <span>Creator: {formatWalletAddress(card.creator || '')}</span>
-                        <span>Dev Fee: {card.devFeePercentage}%</span>
+                    <div className="p-3">
+                      <div className="mb-2">
+                        <h3 className="text-sm font-bold text-gray-800 truncate">{card.title}</h3>
+                        <p className="text-xs text-gray-500">By: {formatWalletAddress(card.creator || '')}</p>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center mt-4">
+                      
                       <button
                         onClick={() => !card.hasVoted && handleVote(card._id)}
-                        className={`w-full py-2 rounded-md font-bold flex items-center justify-center ${
+                        className={`w-full py-1.5 rounded-md text-sm font-medium flex items-center justify-center ${
                           card.hasVoted 
-                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
                             : 'bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black'
                         }`}
                         disabled={card.hasVoted || voteLoading === card._id}
                       >
                         {voteLoading === card._id ? (
                           <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -451,14 +464,14 @@ export default function Home() {
                           </>
                         ) : card.hasVoted ? (
                           <>
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
                             </svg>
                             VOTED
                           </>
                         ) : (
                           <>
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
                             </svg>
                             Vote
@@ -475,7 +488,7 @@ export default function Home() {
                 <div className="text-center mt-8">
                   <button
                     onClick={() => fetchCards(false)}
-                    className="bg-[#121212] hover:bg-[#1a1a1a] text-white border border-[#2a2a2a] px-8 py-3 rounded-md font-bold text-lg inline-flex items-center"
+                    className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 px-8 py-3 rounded-md font-bold text-lg inline-flex items-center shadow-sm"
                   >
                     Load More Cards
                     <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -498,13 +511,13 @@ export default function Home() {
           ) : (
             <div className="text-center py-16">
               <div className="text-5xl mb-4">🎭</div>
-              <h3 className="text-2xl font-bold mb-2">No Trap Cards Yet</h3>
-              <p className="text-gray-400 mb-6">Be the first to create a trap card!</p>
+              <h3 className="text-2xl font-bold mb-2">No FourVote Cards Yet</h3>
+              <p className="text-gray-400 mb-6">Be the first to create a FourVote card!</p>
               <Link 
                 href="/create" 
                 className="bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black px-8 py-3 rounded-md font-bold text-lg inline-block"
               >
-                Create a Trap Card
+                Create a FourVote Card
               </Link>
             </div>
           )

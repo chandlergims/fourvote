@@ -3,7 +3,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { voteForCard } from '../lib/api';
-import TrapCard from './TrapCard';
+import BNBvoteCard from './BNBvoteCard';
 
 interface CardItemProps {
   id: string;
@@ -28,12 +28,12 @@ const CardItem: React.FC<CardItemProps> = ({
   isTokenized,
   onVote,
 }) => {
-  const { walletAddress, isAuthenticated } = useAuth();
+  const { address, isAuthenticated } = useAuth();
   const [isVoting, setIsVoting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const hasVoted = voters.includes(walletAddress || '');
-  const isCreator = creator === walletAddress;
+  const hasVoted = voters.includes(address || '');
+  const isCreator = creator === address;
   const canVote = isAuthenticated && !hasVoted && !isCreator;
 
   // Extract ticker from description if available
@@ -66,41 +66,45 @@ const CardItem: React.FC<CardItemProps> = ({
   };
 
   return (
-    <div className="rounded-lg overflow-hidden shadow-lg transition-transform hover:scale-105">
+    <div className="rounded-lg overflow-hidden shadow-xl transition-transform hover:scale-105 bg-gray-800">
       {/* Card Preview */}
-      <TrapCard
-        title={title}
-        imageUrl={imageUrl || null}
-        ticker={ticker}
-        description={description}
-        devFeePercentage={devFeePercentage}
-      />
-
-      {/* Card Info and Vote Button */}
-      <div className="p-4 bg-gray-800">
-        <div className="flex justify-between items-center text-sm mb-3">
-          <span className="text-gray-400">By: {formatWalletAddress(creator)}</span>
-          <span className="bg-blue-900 text-blue-200 px-2 py-1 rounded-full text-xs">
-            {votes} vote{votes !== 1 ? 's' : ''}
-          </span>
+      <div className="relative">
+        <BNBvoteCard
+          title={title}
+          imageUrl={imageUrl || null}
+          ticker={ticker}
+          description={description}
+          devFeePercentage={devFeePercentage}
+        />
+        
+        {/* Vote Count Badge */}
+        <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded-full text-xs flex items-center">
+          <span className="mr-1">🔥</span>
+          {votes}
         </div>
-
+        
         {isTokenized && (
-          <div className="bg-yellow-900 text-yellow-200 text-xs px-2 py-1 rounded mb-3 inline-block">
+          <div className="absolute top-2 right-2 bg-yellow-900 text-yellow-200 text-xs px-2 py-1 rounded-full">
             Tokenized
           </div>
         )}
+      </div>
 
-        {error && (
-          <p className="text-red-500 text-xs mb-3">{error}</p>
-        )}
+      {/* Card Info and Vote Button */}
+      <div className="p-3">
+        <div className="flex justify-between items-center text-sm mb-3">
+          <span className="text-gray-400 text-xs">By: {formatWalletAddress(creator)}</span>
+          {error && (
+            <p className="text-red-500 text-xs">{error}</p>
+          )}
+        </div>
 
         <button
           onClick={handleVote}
           disabled={!canVote || isVoting}
           className={`w-full py-2 px-4 rounded-md text-sm font-medium transition-colors ${
             canVote
-              ? 'bg-[#f0b90b] hover:bg-[#d9a70d] text-black'
+              ? 'bg-[rgb(134,239,172)] hover:bg-[rgb(110,220,150)] text-black'
               : 'bg-gray-700 text-gray-400 cursor-not-allowed'
           }`}
         >

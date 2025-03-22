@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import CreateCardForm from "../../components/CreateCardForm";
 
 export default function CreateCard() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, address } = useAuth();
   const router = useRouter();
 
   // Redirect to home if not authenticated with a query parameter to show auth message
@@ -29,12 +29,18 @@ export default function CreateCard() {
   }
 
   const handleCreateSuccess = () => {
-    // Could add a success message or other actions here
+    // Redirect to home page after successful card creation with refresh parameter
     console.log('Card created successfully!');
+    router.push('/?refresh=true');
+    
+    // If the user is on the "My Cards" tab, also set that tab as active
+    if (isAuthenticated && address) {
+      router.push('/?refresh=true&tab=my');
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#1b1d28] text-white">
+    <div className="min-h-screen bg-white text-gray-800">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <CreateCardForm onSuccess={handleCreateSuccess} />
